@@ -14,6 +14,10 @@ const aqiRoutes =
   require("./routes/aqiRoutes");
 const sensorRoutes = 
   require("./routes/sensorRoutes");
+const simulationRoutes = 
+  require("./routes/simulationRoutes");
+const simulationPipeline = 
+  require("./simulation/services/simulationPipeline");
 
 const app = express();
 
@@ -26,10 +30,14 @@ connectDB();
 // START AQI POLLING
 startAQIPoller();
 
+// START SIMULATION ENGINE PIPELINE
+// Runs every 60 seconds (60000ms)
+simulationPipeline.start(60000);
 
 // ROUTES
 app.use("/api/aqi", aqiRoutes);
 app.use("/api/sensors", sensorRoutes);
+app.use("/api/simulation", simulationRoutes);
 
 
 app.get("/", (req, res) => {
