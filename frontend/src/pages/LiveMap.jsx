@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import L from 'leaflet';
@@ -26,16 +26,16 @@ const getAQILabel = (aqi) => {
 
 // ─── Marker icon factories ────────────────────────────────────────────────────
 // Square = Official API source
-const createApiMarker = (aqi, selected = false) => L.divIcon({
+const createApiMarker = (aqi, selected = false, isForecast = false) => L.divIcon({
   className: '',
   html: `<div style="
     width:${selected ? 44 : 34}px; height:${selected ? 44 : 34}px;
     background:${getAQIColor(aqi)};
-    border:${selected ? '4px solid #1e40af' : '3px solid white'};
+    border:${selected ? '4px solid #1e40af' : (isForecast ? '3px dashed #a855f7' : '3px solid white')};
     border-radius:8px;
     display:flex; align-items:center; justify-content:center;
     color:white; font-weight:bold; font-size:${selected ? 13 : 11}px;
-    box-shadow: 0 2px 10px rgba(0,0,0,${selected ? 0.5 : 0.3});
+    box-shadow: ${isForecast ? '0 0 15px rgba(168,85,247,0.8)' : `0 2px 10px rgba(0,0,0,${selected ? 0.5 : 0.3})`};
     transition: all 0.2s;
   ">${aqi ?? '?'}</div>`,
   iconSize: [selected ? 44 : 34, selected ? 44 : 34],
@@ -100,6 +100,24 @@ const LiveMap = () => {
   const [severityFilter, setSeverity] = useState('all');
   const [staleHours, setStaleHours]   = useState(null); // null = show all
   const [filterOpen, setFilterOpen]   = useState(false);
+
+  // AI Forecast Mode
+  const [mapMode, setMapMode]       = useState('live'); // 'live' | 'forecast'
+  const [forecasts, setForecasts]   = useState({});
+  const [forecastLoading, setForecastLoading] = useState(false);
+
+  const fetchForecasts = async () => {
+    if (Object.keys(forecasts).length > 0) return; // Already fetched
+    setForecastLoading(true);
+    try {
+      const res = await axios.get('http://localhost:5000/api/aqi/forecast-all');
+      setForecasts(res.data);
+    } catch (error) {
+      console.error("Failed to fetch forecasts", error);
+    } finally {
+      setForecastLoading(false);
+    }
+  };
 
   // ── Fetch data ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -230,6 +248,26 @@ const LiveMap = () => {
         )}
       </div>
 
+      {/* ── Time-Travel Toggle ────────────────────────────────────────────── */}
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[500] bg-white border border-gray-200 shadow-lg rounded-xl p-1.5 flex items-center gap-1">
+        <button
+          onClick={() => setMapMode('live')}
+          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${mapMode === 'live' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+        >
+          🟢 Live Data
+        </button>
+        <button
+          onClick={() => {
+            setMapMode('forecast');
+            fetchForecasts();
+          }}
+          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${mapMode === 'forecast' ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-300' : 'text-gray-500 hover:bg-purple-50'}`}
+        >
+          🔮 T+1h Forecast
+          {forecastLoading && <span className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin inline-block"></span>}
+        </button>
+      </div>
+
       {/* ── Map ───────────────────────────────────────────────────────────── */}
       <div className="absolute inset-0 z-0 pt-7">
         {loading ? (
@@ -252,38 +290,63 @@ const LiveMap = () => {
               if (iotCityMap[cityData.city]) return null;
 
               const isSelected = selectedCity === cityData.city;
+              const hasForecast = forecasts[cityData.city] != null;
+              const fAqi = hasForecast ? Math.round(forecasts[cityData.city]) : null;
+              const displayAqi = mapMode === 'forecast' && hasForecast ? fAqi : cityData.aqi;
+              const isForecastMode = mapMode === 'forecast' && hasForecast;
+
               return (
-                <Marker
-                  key={`api-${cityData._id || cityData.city}`}
-                  position={[cityData.location.lat, cityData.location.lon]}
-                  icon={createApiMarker(cityData.aqi, isSelected)}
-                >
-                  <Popup maxWidth={200}>
-                    <div style={{ fontFamily: 'sans-serif' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{cityData.city}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>📍 Official Station</div>
-                      <div style={{ fontWeight: 800, fontSize: 26, color: getAQIColor(cityData.aqi) }}>
-                        {cityData.aqi}
-                      </div>
-                      <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{cityData.category}</div>
-                      {cityData.pollutants && (
-                        <div style={{ fontSize: 11, borderTop: '1px solid #e5e7eb', paddingTop: 6 }}>
-                          <div>PM2.5: <b>{cityData.pollutants.pm25 ?? 'N/A'}</b></div>
-                          <div>PM10: <b>{cityData.pollutants.pm10 ?? 'N/A'}</b></div>
-                          <div>NO₂: <b>{cityData.pollutants.no2 ?? 'N/A'}</b></div>
-                          <div>NOx: <b>{cityData.pollutants.nox ?? 'N/A'}</b></div>
-                          <div>NO: <b>{cityData.pollutants.no ?? 'N/A'}</b></div>
-                          <div>NH₃: <b>{cityData.pollutants.nh3 ?? 'N/A'}</b></div>
-                          <div>CO: <b>{cityData.pollutants.co ?? 'N/A'}</b></div>
-                          <div>O₃: <b>{cityData.pollutants.o3 ?? 'N/A'}</b></div>
+                <React.Fragment key={`api-${cityData._id || cityData.city}`}>
+                  {/* Expanding Danger Radius behind the marker */}
+                  {mapMode === 'live' && hasForecast && fAqi > cityData.aqi && (
+                    <Circle 
+                      center={[cityData.location.lat, cityData.location.lon]} 
+                      radius={35000} 
+                      pathOptions={{ color: getAQIColor(fAqi), fillColor: getAQIColor(fAqi), fillOpacity: 0.15, weight: 1, dashArray: "5,5" }} 
+                    />
+                  )}
+                  
+                  <Marker
+                    position={[cityData.location.lat, cityData.location.lon]}
+                    icon={createApiMarker(displayAqi, isSelected, isForecastMode)}
+                  >
+                    <Popup maxWidth={220}>
+                      <div style={{ fontFamily: 'sans-serif' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{cityData.city}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>📍 Official Station</div>
+                        
+                        <div style={{ fontWeight: 800, fontSize: 26, color: getAQIColor(displayAqi), display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {displayAqi} 
+                          {isForecastMode && <span style={{fontSize: 12, color: '#a855f7', fontWeight: 'bold'}} className="animate-pulse">🔮 T+1h Forecast</span>}
                         </div>
-                      )}
-                      <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af' }}>
-                        🕐 {new Date(cityData.timestamp).toLocaleTimeString()}
+                        <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{getAQILabel(displayAqi)}</div>
+                        
+                        {/* Predictive Popup Row */}
+                        {mapMode === 'live' && hasForecast && (
+                          <div style={{ fontSize: 11, fontWeight: 'bold', background: '#f3e8ff', padding: '6px', borderRadius: '6px', color: '#7e22ce', marginBottom: '8px' }}>
+                            Current: {cityData.aqi} ➔ AI Forecast: {fAqi} {fAqi > cityData.aqi ? '📉' : '📈'}
+                          </div>
+                        )}
+
+                        {cityData.pollutants && (
+                          <div style={{ fontSize: 11, borderTop: '1px solid #e5e7eb', paddingTop: 6 }}>
+                            <div>PM2.5: <b>{cityData.pollutants.pm25 ?? 'N/A'}</b></div>
+                            <div>PM10: <b>{cityData.pollutants.pm10 ?? 'N/A'}</b></div>
+                            <div>NO₂: <b>{cityData.pollutants.no2 ?? 'N/A'}</b></div>
+                            <div>NOx: <b>{cityData.pollutants.nox ?? 'N/A'}</b></div>
+                            <div>NO: <b>{cityData.pollutants.no ?? 'N/A'}</b></div>
+                            <div>NH₃: <b>{cityData.pollutants.nh3 ?? 'N/A'}</b></div>
+                            <div>CO: <b>{cityData.pollutants.co ?? 'N/A'}</b></div>
+                            <div>O₃: <b>{cityData.pollutants.o3 ?? 'N/A'}</b></div>
+                          </div>
+                        )}
+                        <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af' }}>
+                          🕐 {new Date(cityData.timestamp).toLocaleTimeString()}
+                        </div>
                       </div>
-                    </div>
-                  </Popup>
-                </Marker>
+                    </Popup>
+                  </Marker>
+                </React.Fragment>
               );
             })}
 

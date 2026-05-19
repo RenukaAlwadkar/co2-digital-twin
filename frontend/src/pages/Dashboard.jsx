@@ -21,7 +21,7 @@ const aqiBg = (aqi) => {
 };
 
 // ── Custom SVG Line Chart Component (Dynamic scaling & curved area gradient) ──
-const SVGLineChart = ({ data, selectedNode }) => {
+const SVGLineChart = ({ data, selectedNode, forecastAqi }) => {
   if (!data || data.length < 2) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-gray-400 font-medium">
@@ -36,14 +36,19 @@ const SVGLineChart = ({ data, selectedNode }) => {
   const paddingX = 40;
   const paddingY = 20;
 
-  // Find min/max boundaries
-  const maxVal = Math.max(...data.map(d => d.aqi), 100);
-  const minVal = Math.min(...data.map(d => d.aqi), 0);
+  // Find min/max boundaries including forecast
+  const allVals = data.map(d => d.aqi);
+  if (forecastAqi != null) allVals.push(forecastAqi);
+  const maxVal = Math.max(...allVals, 100);
+  const minVal = Math.min(...allVals, 0);
   const valRange = maxVal - minVal || 1;
 
   // Calculate SVG point mapping
+  // If forecast exists, we reserve the last X-axis slot for it
+  const totalSlots = forecastAqi != null ? data.length : data.length - 1;
+  
   const points = data.map((d, index) => {
-    const x = paddingX + (index / (data.length - 1)) * (width - 2 * paddingX);
+    const x = paddingX + (index / totalSlots) * (width - 2 * paddingX);
     const y = height - paddingY - ((d.aqi - minVal) / valRange) * (height - 2 * paddingY);
     return { x, y, val: d.aqi, time: d.time };
   });
@@ -56,11 +61,22 @@ const SVGLineChart = ({ data, selectedNode }) => {
     ? `${pathD} L ${points[points.length - 1].x} ${height - paddingY} L ${points[0].x} ${height - paddingY} Z`
     : '';
 
+  // Forecast point
+  let forecastPoint = null;
+  if (forecastAqi != null && points.length > 0) {
+    const x = paddingX + width - 2 * paddingX; // The very end
+    const y = height - paddingY - ((forecastAqi - minVal) / valRange) * (height - 2 * paddingY);
+    forecastPoint = { x, y, val: forecastAqi, time: 'T+1h' };
+  }
+
   return (
     <div className="w-full h-full flex flex-col justify-between p-2">
       <div className="flex justify-between items-center mb-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase">
         <span>📈 AQI Trend - {selectedNode}</span>
-        <span className="text-blue-500">Min: {minVal} · Max: {maxVal}</span>
+        <div className="flex gap-3">
+          {forecastAqi && <span className="text-purple-500 animate-pulse">🔮 AI Forecast: {Math.round(forecastAqi)}</span>}
+          <span className="text-blue-500">Min: {Math.round(minVal)} · Max: {Math.round(maxVal)}</span>
+        </div>
       </div>
       <div className="relative flex-1 min-h-[110px]">
         <svg className="w-full h-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
@@ -82,6 +98,18 @@ const SVGLineChart = ({ data, selectedNode }) => {
           {/* Line path */}
           {pathD && <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
 
+          {/* AI Forecast Dotted Line */}
+          {forecastPoint && points.length > 0 && (
+            <path 
+              d={`M ${points[points.length - 1].x} ${points[points.length - 1].y} L ${forecastPoint.x} ${forecastPoint.y}`} 
+              fill="none" 
+              stroke="#a855f7" 
+              strokeWidth="3" 
+              strokeDasharray="5,5" 
+              strokeLinecap="round" 
+            />
+          )}
+
           {/* Data nodes */}
           {points.map((p, i) => (
             <g key={i} className="group cursor-pointer">
@@ -89,12 +117,24 @@ const SVGLineChart = ({ data, selectedNode }) => {
               <title>{`AQI: ${p.val}\nTime: ${p.time}`}</title>
             </g>
           ))}
+          
+          {/* Forecast Node */}
+          {forecastPoint && (
+            <g className="group cursor-pointer">
+              <circle cx={forecastPoint.x} cy={forecastPoint.y} r="5" className="fill-purple-500 stroke-purple-200 stroke-2 animate-pulse" />
+              <title>{`🔮 AI Forecast AQI: ${Math.round(forecastPoint.val)}\nTime: ${forecastPoint.time}`}</title>
+            </g>
+          )}
         </svg>
       </div>
       <div className="flex justify-between text-[9px] text-gray-400 font-bold px-1 mt-1">
         <span>{points[0]?.time || '—'}</span>
         <span>{points[Math.floor(points.length / 2)]?.time || '—'}</span>
-        <span>{points[points.length - 1]?.time || '—'}</span>
+        {forecastPoint ? (
+          <span className="text-purple-500">T+1h Forecast</span>
+        ) : (
+          <span>{points[points.length - 1]?.time || '—'}</span>
+        )}
       </div>
     </div>
   );
@@ -214,6 +254,11 @@ const Dashboard = () => {
   const [iotHistory, setIotHistory] = useState([]);
   const [apiHistory, setApiHistory] = useState([]);
 
+  // AI Forecast state
+  const [forecast, setForecast] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState(null);
+
   // ── 1. Fetch initial values and history logs on Mount ─────────────────────
   useEffect(() => {
     const fetchHistory = async () => {
@@ -239,8 +284,13 @@ const Dashboard = () => {
           axios.get('http://localhost:5000/api/sensors/latest'),
           axios.get('http://localhost:5000/api/aqi/all')
         ]);
-        setSensors(sensorRes.data);
-        setApiCities(apiRes.data);
+        
+        // Sort data alphabetically to prevent dropdown/tables from jumping on every poll
+        const sortedSensors = [...(sensorRes.data || [])].sort((a, b) => (a.nodeId || '').localeCompare(b.nodeId || ''));
+        const sortedCities = [...(apiRes.data || [])].sort((a, b) => (a.city || '').localeCompare(b.city || ''));
+        
+        setSensors(sortedSensors);
+        setApiCities(sortedCities);
         setLastRefresh(new Date());
 
         // Dynamic streaming updates to history buffers to keep line charts alive in real-time
@@ -334,6 +384,29 @@ const Dashboard = () => {
     }
   }, [currentDisplay, iotHistory, apiHistory]);
 
+  // ── 3. Fetch AI Forecast when selection changes ───────────────────────────
+  useEffect(() => {
+    const fetchForecast = async () => {
+      // We only forecast for official API cities that have history
+      if (!currentDisplay || currentDisplay.isIoT) {
+        setForecast(null);
+        return;
+      }
+      setForecastLoading(true);
+      setForecastError(null);
+      try {
+        const response = await axios.get(`http://localhost:5000/api/aqi/forecast/${currentDisplay.city}`);
+        setForecast(response.data);
+      } catch (error) {
+        setForecastError(error.response?.data?.error || "ML API Offline");
+        setForecast(null);
+      } finally {
+        setForecastLoading(false);
+      }
+    };
+    fetchForecast();
+  }, [currentDisplay]);
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen text-gray-900 font-sans">
 
@@ -390,8 +463,23 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* ── AI Warning Banner ────────────────────────────────────────────── */}
+      {forecast && forecast.forecasted_aqi > (displayAqi + 15) && (
+        <div className="mb-6 bg-gradient-to-r from-purple-600 to-red-500 text-white p-4 rounded-xl shadow-lg flex items-center justify-between border-2 border-purple-300 animate-pulse">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl drop-shadow-md">⚠️</span>
+            <div>
+              <h4 className="font-extrabold text-sm uppercase tracking-wider">AI Forecast Alert</h4>
+              <p className="text-sm font-medium">
+                {displayCity}'s AQI is forecasted to degrade from <b>{displayAqi}</b> to <b className="text-lg">{Math.round(forecast.forecasted_aqi)}</b> in the next hour due to rising telemetry patterns.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Top Stats Row ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
 
         {/* Card 1: Dynamic Current AQI */}
         <div className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all duration-300 ${aqiBg(displayAqi)}`}>
@@ -422,6 +510,33 @@ const Dashboard = () => {
                 )}
               </div>
             </>
+          )}
+        </div>
+
+        {/* Card 1.5: AI Forecasted AQI */}
+        <div className={`bg-gradient-to-br from-indigo-900 to-purple-900 p-5 rounded-xl shadow-lg relative overflow-hidden transition-all duration-300 border border-purple-500`}>
+          <div className="absolute top-0 right-0 bg-purple-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-bl-lg">AI FORECAST</div>
+          <h3 className="text-purple-300 mb-2 font-semibold text-xs uppercase tracking-wider">
+            Expected AQI (T+1h)
+          </h3>
+          {forecastLoading ? (
+            <div className="text-purple-400 animate-pulse font-medium text-xs mt-4">Processing 24h tensor matrix...</div>
+          ) : forecastError ? (
+            <div className="text-pink-400 font-medium text-[10px] leading-tight mt-4">⚠️ {forecastError}</div>
+          ) : forecast ? (
+            <>
+              <div className={`text-4xl font-black mb-1.5 text-white drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]`}>
+                {Math.round(forecast.forecasted_aqi)} <span className="text-sm font-semibold text-purple-300">PREDICTED</span>
+              </div>
+              <div className="text-xs text-purple-400 font-medium">
+                🔮 Based on {forecast.based_on_hours}h history
+              </div>
+              <div className="text-[10px] text-purple-300 mt-2 font-bold flex items-center gap-1">
+                📍 {forecast.city} (FastAPI CNN)
+              </div>
+            </>
+          ) : (
+            <div className="text-purple-400 font-medium text-[10px] mt-4">Select an API City to view AI Forecast</div>
           )}
         </div>
 
@@ -518,7 +633,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Line Chart Grid item */}
         <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-gray-200 shadow-sm min-h-[220px]">
-          <SVGLineChart data={chartData} selectedNode={displayCity} />
+          <SVGLineChart data={chartData} selectedNode={displayCity} forecastAqi={forecast?.forecasted_aqi} />
         </div>
         {/* Doughnut Chart Grid item */}
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm min-h-[220px]">
