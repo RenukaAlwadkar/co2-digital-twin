@@ -85,86 +85,88 @@ const calcSubIndex = (conc, pollutant) => {
 const calculateIoTAQI = (payload) => {
   const {
     mq135 = 0,
-    mq7   = 0,
+    mq7 = 0,
     temperature = 25,
-    humidity    = 50,
-    pressure    = 1013,
+    humidity = 50,
+    pressure = 1013,
   } = payload;
 
   // ── Step 1: ADC → Voltage ─────────────────────────────────────────────────
   const v135 = adcToVoltage(mq135);
-  const v7   = adcToVoltage(mq7);
+  const v7 = adcToVoltage(mq7);
 
-  // ── Step 2: Voltage → Rs ─────────────────────────────────────────────────
+  // ── Step 2: Voltage → Sensor Resistance (Rs) ─────────────────────────────
   const rs135 = voltageToRs(v135, MQ135_RL);
-  const rs7   = voltageToRs(v7,   MQ7_RL);
+  const rs7 = voltageToRs(v7, MQ7_RL);
 
   // ── Step 3: Raw ppm concentrations ───────────────────────────────────────
-  const co2Ppm = computePPM(rs135, MQ135_R0, MQ135_CO2); // CO2 equivalent
-  const no2Ppm = computePPM(rs135, MQ135_R0, MQ135_NO2); // NO2
-  const coPpm  = computePPM(rs7,   MQ7_R0,   MQ7_CO);   // CO
+  // MQ135 gives CO2-equivalent concentration
+  const co2Ppm = computePPM(rs135, MQ135_R0, MQ135_CO2);
 
-  // ── Step 4: Derive pollutant concentrations ───────────────────────────────
-  // PM2.5 (μg/m³): empirical proxy from CO2-equivalent using urban IoT scaling
+  // MQ7 gives Carbon Monoxide concentration
+  const coPpm = computePPM(rs7, MQ7_R0, MQ7_CO);
+
+  // ── Step 4: Derive pollutant concentrations ──────────────────────────────
+  // PM2.5 (µg/m³): empirical proxy from CO2-equivalent
   let pm25 = co2Ppm * 0.12;
-  // PM10 ≈ PM2.5 × 1.5 (Indian urban ratio from CPCB studies)
+
+  // PM10 ≈ PM2.5 × 1.5
   let pm10 = pm25 * 1.5;
-  // NO2 (μg/m³): 1 ppm NO2 ≈ 1912 μg/m³ at 25°C, 1 atm
-  let no2  = no2Ppm * 1912;
+
   // CO (mg/m³): 1 ppm CO ≈ 1.145 mg/m³
-  let co   = coPpm * 1.145;
+  let co = coPpm * 1.145;
 
   // ── Step 5: Environmental corrections ────────────────────────────────────
 
-  // Humidity: high humidity retains particulates (+0.5% per % above 50%)
-  const humFactor  = 1 + (humidity - 50) * 0.005;
+  // Humidity correction for particulate matter
+  const humFactor = 1 + (humidity - 50) * 0.005;
   pm25 *= humFactor;
   pm10 *= humFactor;
 
-  // Temperature: high temp increases reaction rates for NO2 & CO
+  // Temperature correction for CO
   const tempFactor = 1 + (temperature - 25) * 0.01;
-  no2 *= tempFactor;
-  co  *= tempFactor;
+  co *= tempFactor;
 
-  // Pressure: lower pressure → less dispersion → effectively higher concentration
+  // Pressure correction
   const presFactor = 1013 / Math.max(pressure, 900);
   pm25 *= presFactor;
   pm10 *= presFactor;
-  no2  *= presFactor;
-  co   *= presFactor;
+  co *= presFactor;
 
-  // Clamp negatives
+  // Clamp negative values
   pm25 = Math.max(0, pm25);
   pm10 = Math.max(0, pm10);
-  no2  = Math.max(0, no2);
-  co   = Math.max(0, co);
+  co = Math.max(0, co);
 
-  // ── Step 6: Sub-index AQI per pollutant (CPCB interpolation) ────────────
+  // ── Step 6: AQI Sub-indices (CPCB interpolation) ────────────────────────
   const aqiPM25 = calcSubIndex(pm25, 'pm25');
   const aqiPM10 = calcSubIndex(pm10, 'pm10');
-  const aqiNO2  = calcSubIndex(no2,  'no2');
-  const aqiCO   = calcSubIndex(co,   'co');
+  const aqiCO = calcSubIndex(co, 'co');
 
-  // ── Step 7: Final AQI = MAX of all sub-indices ────────────────────────────
-  const subArr     = [aqiPM25, aqiPM10, aqiNO2, aqiCO];
-  const pollNames  = ['pm25', 'pm10', 'no2', 'co'];
-  const maxIdx     = subArr.indexOf(Math.max(...subArr));
-  const finalAQI   = Math.round(Math.max(...subArr));
+  // ── Step 7: Final AQI = MAX of all sub-indices ───────────────────────────
+  const subArr = [aqiPM25, aqiPM10, aqiCO];
+  const pollNames = ['pm25', 'pm10', 'co'];
+
+  const maxIdx = subArr.indexOf(Math.max(...subArr));
+  const finalAQI = Math.round(Math.max(...subArr));
 
   return {
-    estAqi:             finalAQI,
-    dominantPollutant:  pollNames[maxIdx],
+    estAqi: finalAQI,
+    dominantPollutant: pollNames[maxIdx],
+
+    // Estimated pollutant concentrations
     estPollutants: {
+      co2: +co2Ppm.toFixed(2), // Main metric for your Urban CO₂ Digital Twin
       pm25: +pm25.toFixed(2),
       pm10: +pm10.toFixed(2),
-      no2:  +no2.toFixed(2),
-      co:   +co.toFixed(4),
+      co: +co.toFixed(4),
     },
+
+    // AQI sub-indices
     subIndices: {
       pm25: +aqiPM25.toFixed(1),
       pm10: +aqiPM10.toFixed(1),
-      no2:  +aqiNO2.toFixed(1),
-      co:   +aqiCO.toFixed(1),
+      co: +aqiCO.toFixed(1),
     },
   };
 };

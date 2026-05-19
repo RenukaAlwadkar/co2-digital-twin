@@ -2,7 +2,7 @@
 // Add a new entry here when you deploy a new physical node
 
 const NODE_REGISTRY = {
-  'demo_node_001': {
+  'live_prototype_data_123': {
     city:     'Wardha',
     state:    'Maharashtra',
     lat:      20.7453,

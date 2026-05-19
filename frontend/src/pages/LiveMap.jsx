@@ -148,12 +148,16 @@ const LiveMap = () => {
     const map = {};
     sensors.forEach(sensor => {
       if (sensor.city && sensor.location?.lat && sensor.location?.lng) {
-        map[sensor.city] = {
-          sensor,
-          estAqi: sensor.estAqi ?? 0,
-          lat:    sensor.location.lat,
-          lng:    sensor.location.lng,
-        };
+        // Ensure only the most recently active node is displayed for this city
+        const existing = map[sensor.city];
+        if (!existing || new Date(sensor.timestamp) > new Date(existing.sensor.timestamp)) {
+          map[sensor.city] = {
+            sensor,
+            estAqi: sensor.estAqi ?? 0,
+            lat:    sensor.location.lat,
+            lng:    sensor.location.lng,
+          };
+        }
       }
     });
     return map;
