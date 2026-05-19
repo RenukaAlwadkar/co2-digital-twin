@@ -271,6 +271,9 @@ const LiveMap = () => {
                           <div>PM2.5: <b>{cityData.pollutants.pm25 ?? 'N/A'}</b></div>
                           <div>PM10: <b>{cityData.pollutants.pm10 ?? 'N/A'}</b></div>
                           <div>NO₂: <b>{cityData.pollutants.no2 ?? 'N/A'}</b></div>
+                          <div>NOx: <b>{cityData.pollutants.nox ?? 'N/A'}</b></div>
+                          <div>NO: <b>{cityData.pollutants.no ?? 'N/A'}</b></div>
+                          <div>NH₃: <b>{cityData.pollutants.nh3 ?? 'N/A'}</b></div>
                           <div>CO: <b>{cityData.pollutants.co ?? 'N/A'}</b></div>
                           <div>O₃: <b>{cityData.pollutants.o3 ?? 'N/A'}</b></div>
                         </div>

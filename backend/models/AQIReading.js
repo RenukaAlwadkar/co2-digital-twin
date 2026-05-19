@@ -27,7 +27,10 @@ const AQIReadingSchema = new mongoose.Schema({
     pm25: Number,
     pm10: Number,
 
+    no: Number,
     no2: Number,
+    nox: Number,
+    nh3: Number,
     so2: Number,
 
     co: Number,
@@ -36,7 +39,7 @@ const AQIReadingSchema = new mongoose.Schema({
 
   source: {
     type: String,
-    default: "AQICN"
+    default: "OpenWeatherMap"
   },
 
   timestamp: {

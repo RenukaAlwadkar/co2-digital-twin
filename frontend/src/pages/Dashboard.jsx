@@ -106,6 +106,7 @@ const SVGDoughnutChart = ({ pollutants, title }) => {
     { label: 'PM2.5', value: pollutants?.pm25 || 0, color: '#f97316' },
     { label: 'PM10',  value: pollutants?.pm10 || 0, color: '#eab308' },
     { label: 'NO₂',   value: pollutants?.no2 || 0,  color: '#ef4444' },
+    { label: 'NOx',   value: pollutants?.nox || 0,  color: '#8b5cf6' },
     { label: 'CO',    value: pollutants?.co || 0,   color: '#3b82f6' }
   ], [pollutants]);
 
@@ -471,6 +472,9 @@ const Dashboard = () => {
               <div>PM2.5: <span className="text-orange-500 font-extrabold">{currentDisplay.pollutants.pm25 ?? 'N/A'}</span></div>
               <div>PM10: <span className="text-yellow-600 font-extrabold">{currentDisplay.pollutants.pm10 ?? 'N/A'}</span></div>
               <div>NO₂: <span className="text-red-500 font-extrabold">{currentDisplay.pollutants.no2 ?? 'N/A'}</span></div>
+              <div>NOx: <span className="text-purple-500 font-extrabold">{currentDisplay.pollutants.nox ?? 'N/A'}</span></div>
+              <div>NO: <span className="text-pink-500 font-extrabold">{currentDisplay.pollutants.no ?? 'N/A'}</span></div>
+              <div>NH₃: <span className="text-indigo-500 font-extrabold">{currentDisplay.pollutants.nh3 ?? 'N/A'}</span></div>
               <div>CO: <span className="text-blue-500 font-extrabold">{currentDisplay.pollutants.co ?? 'N/A'}</span></div>
             </div>
           ) : (
@@ -622,6 +626,9 @@ const Dashboard = () => {
                   <th className="px-5 py-3.5 font-bold">PM2.5</th>
                   <th className="px-5 py-3.5 font-bold">PM10</th>
                   <th className="px-5 py-3.5 font-bold">NO₂</th>
+                  <th className="px-5 py-3.5 font-bold">NOx</th>
+                  <th className="px-5 py-3.5 font-bold">NO</th>
+                  <th className="px-5 py-3.5 font-bold">NH₃</th>
                   <th className="px-5 py-3.5 font-bold">CO</th>
                   <th className="px-5 py-3.5 font-bold">SO₂</th>
                   <th className="px-5 py-3.5 font-bold">O₃</th>
@@ -654,6 +661,9 @@ const Dashboard = () => {
                       <td className="px-5 py-4 font-bold text-orange-500">{city.pollutants?.pm25 ?? '—'}</td>
                       <td className="px-5 py-4 font-bold text-yellow-600">{city.pollutants?.pm10 ?? '—'}</td>
                       <td className="px-5 py-4 font-bold text-red-500">{city.pollutants?.no2 ?? '—'}</td>
+                      <td className="px-5 py-4 font-bold text-purple-500">{city.pollutants?.nox ?? '—'}</td>
+                      <td className="px-5 py-4 font-bold text-pink-500">{city.pollutants?.no ?? '—'}</td>
+                      <td className="px-5 py-4 font-bold text-indigo-500">{city.pollutants?.nh3 ?? '—'}</td>
                       <td className="px-5 py-4 font-bold text-blue-500">{city.pollutants?.co ?? '—'}</td>
                       <td className="px-5 py-4 font-semibold text-gray-500">{city.pollutants?.so2 ?? '—'}</td>
                       <td className="px-5 py-4 font-semibold text-gray-500">{city.pollutants?.o3 ?? '—'}</td>
